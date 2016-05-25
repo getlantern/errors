@@ -28,7 +28,7 @@ One can also record additional data:
 		With("mydata", "myvalue").
 		With("moredata", 5)
 
-When used with github.com/getlantern/context, Error captures its current context
+When used with github.com/getlantern/ops, Error captures its current context
 and propagates that data for use in calling layers.
 
 When used with github.com/getlantern/golog, Error provides stacktraces:
@@ -82,6 +82,7 @@ import (
 
 	"github.com/getlantern/context"
 	"github.com/getlantern/hidden"
+	"github.com/getlantern/ops"
 	"github.com/getlantern/stack"
 )
 
@@ -263,7 +264,7 @@ func buildError(desc string, wrapped error, cause Error) *structured {
 	e := &structured{
 		data: make(context.Map),
 		// We capture the current context to allow it to propagate to higher layers.
-		context: context.AsMap(nil, false),
+		context: ops.AsMap(nil, false),
 		cause:   cause,
 	}
 	e.save()
