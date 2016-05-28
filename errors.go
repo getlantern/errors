@@ -104,6 +104,9 @@ type Error interface {
 	// underscore_divided_words, so all characters except letters and numbers will
 	// be replaced with underscores, and all letters will be lowercased.
 	With(key string, value interface{}) Error
+
+	// RootCause returns the bottom-most cause of this Error.
+	RootCause() Error
 }
 
 type structured struct {
@@ -178,6 +181,13 @@ func (e *structured) With(key string, value interface{}) Error {
 		e.data[k] = fmt.Sprint(actual)
 	}
 	return e
+}
+
+func (e *structured) RootCause() Error {
+	if e.cause == nil {
+		return e
+	}
+	return e.cause.RootCause()
 }
 
 // Error satisfies the error interface

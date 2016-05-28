@@ -8,6 +8,7 @@ import (
 
 	"github.com/getlantern/context"
 	"github.com/getlantern/hidden"
+	"github.com/getlantern/ops"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -20,16 +21,16 @@ func TestFull(t *testing.T) {
 
 	// Iterate past the size of the hidden buffer
 	for i := 0; i < len(hiddenErrors)*2; i++ {
-		ctx := context.Enter().Put("ca", 100).Put("cd", 100)
+		op := ops.Enter("op1").Put("ca", 100).Put("cd", 100)
 		e := New("Hello %v", "There").Op("My Op").With("DaTa_1", 1)
-		ctx.Exit()
+		op.Exit()
 		if firstErr == nil {
 			firstErr = e
 		}
 		assert.Equal(t, "Hello There", e.Error()[:11])
-		ctx = context.Enter().Put("ca", 200).Put("cb", 200).Put("cc", 200)
+		op = ops.Enter("op2").Put("ca", 200).Put("cb", 200).Put("cc", 200)
 		e3 := Wrap(fmt.Errorf("I'm wrapping your text: %v", e)).Op("outer op").With("dATA+1", i).With("cb", 300)
-		ctx.Exit()
+		op.Exit()
 		assert.Equal(t, e, e3.(*structured).cause, "Wrapping a regular error should have extracted the contained *Error")
 		m := make(context.Map)
 		e3.Fill(m)
@@ -86,6 +87,7 @@ Caused by: d
 `
 
 	assert.Equal(t, expected, replaceNumbers.ReplaceAllString(hidden.Clean(buf.String()), "999"))
+	assert.Equal(t, buildSubSubSubCause().Error(), hidden.Clean(outer.RootCause().Error()))
 }
 
 func buildCause() Error {
