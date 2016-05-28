@@ -87,7 +87,7 @@ Caused by: d
 `
 
 	assert.Equal(t, expected, replaceNumbers.ReplaceAllString(hidden.Clean(buf.String()), "999"))
-	assert.Equal(t, buildSubSubSubCause().Error(), hidden.Clean(outer.RootCause().Error()))
+	assert.Equal(t, buildSubSubSubCause(), outer.RootCause())
 }
 
 func buildCause() Error {

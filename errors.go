@@ -105,8 +105,10 @@ type Error interface {
 	// be replaced with underscores, and all letters will be lowercased.
 	With(key string, value interface{}) Error
 
-	// RootCause returns the bottom-most cause of this Error.
-	RootCause() Error
+	// RootCause returns the bottom-most cause of this Error. If the Error
+	// resulted from wrapping a plain error, the wrapped error will be returned as
+	// the cause.
+	RootCause() error
 }
 
 type structured struct {
@@ -114,6 +116,7 @@ type structured struct {
 	hiddenID  string
 	data      context.Map
 	context   context.Map
+	wrapped   error
 	cause     Error
 	callStack stack.CallStack
 }
@@ -183,8 +186,11 @@ func (e *structured) With(key string, value interface{}) Error {
 	return e
 }
 
-func (e *structured) RootCause() Error {
+func (e *structured) RootCause() error {
 	if e.cause == nil {
+		if e.wrapped != nil {
+			return e.wrapped
+		}
 		return e
 	}
 	return e.cause.RootCause()
@@ -275,6 +281,7 @@ func buildError(desc string, wrapped error, cause Error) *structured {
 		data: make(context.Map),
 		// We capture the current context to allow it to propagate to higher layers.
 		context: ops.AsMap(nil, false),
+		wrapped: wrapped,
 		cause:   cause,
 	}
 	e.save()
