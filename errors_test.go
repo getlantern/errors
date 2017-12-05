@@ -137,4 +137,6 @@ func TestHiddenWithCause(t *testing.T) {
 		}
 	}
 	fmt.Println(buf.String())
+	// We're not asserting the output because we're just making sure that printing
+	// doesn't panic. If we get to this point without panicking, we're happy.
 }
