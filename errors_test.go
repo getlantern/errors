@@ -117,3 +117,24 @@ func TestWrapNil(t *testing.T) {
 func doWrapNil() error {
 	return Wrap(nil)
 }
+
+func TestHiddenWithCause(t *testing.T) {
+	e1 := fmt.Errorf("I failed %v", "dude")
+	e2 := New("I wrap: %v", e1)
+	e3 := fmt.Errorf("Hiding %v", e2)
+	// clear hidden buffer
+	hiddenErrors = make([]*structured, 100)
+	e4 := Wrap(e3)
+	e5 := New("I'm really outer: %v", e4)
+
+	buf := &bytes.Buffer{}
+	print := e5.MultiLinePrinter()
+	for {
+		more := print(buf)
+		buf.WriteByte('\n')
+		if !more {
+			break
+		}
+	}
+	fmt.Println(buf.String())
+}
