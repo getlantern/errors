@@ -10,6 +10,7 @@ import (
 	"github.com/getlantern/hidden"
 	"github.com/getlantern/ops"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -31,7 +32,8 @@ func TestFull(t *testing.T) {
 		op = ops.Begin("op2").Set("ca", 200).Set("cb", 200).Set("cc", 200)
 		e3 := Wrap(fmt.Errorf("I'm wrapping your text: %v", e)).Op("outer op").With("dATA+1", i).With("cb", 300)
 		op.End()
-		assert.Equal(t, e, e3.(*structured).cause, "Wrapping a regular error should have extracted the contained *Error")
+		require.IsType(t, (*wrappingError)(nil), e3, "wrapping an error should have resulted in a *wrappingError")
+		assert.Equal(t, e, e3.(*wrappingError).wrapped, "Wrapping a regular error should have extracted the contained *Error")
 		m := make(context.Map)
 		e3.Fill(m)
 		assert.Equal(t, i, m["data_1"], "Error's data should dominate all")
@@ -39,26 +41,29 @@ func TestFull(t *testing.T) {
 		assert.Equal(t, 300, m["cb"], "Error's data should dominate its context")
 		assert.Equal(t, 200, m["cc"], "Error's context should come through")
 		assert.Equal(t, 100, m["cd"], "Cause's context should come through")
-		assert.Equal(t, "My Op", e.(*structured).data["error_op"], "Op should be available from cause")
+		assert.Equal(t, "My Op", e.(*baseError).data["error_op"], "Op should be available from cause")
 
-		for _, call := range e3.(*structured).callStack {
+		for _, call := range e3.(*baseError).callStack {
 			t.Logf("at %v", call)
 		}
 	}
 
 	e3 := Wrap(fmt.Errorf("I'm wrapping your text: %v", firstErr)).With("a", 2)
-	assert.Nil(t, e3.(*structured).cause, "Wrapping an *Error that's no longer buffered should have yielded no cause")
+	// TODO: is this correct? (replaces commented line below)
+	require.IsType(t, (*baseError)(nil), e3, "Wrapping an *Error that's no longer buffered should have resulted in a *baseError")
+	// assert.Nil(t, e3.(*baseError).cause, "Wrapping an *Error that's no longer buffered should have yielded no cause")
 }
 
 func TestNewWithCause(t *testing.T) {
 	cause := buildCause()
 	outer := New("Hello %v", cause)
 	assert.Equal(t, "Hello World", hidden.Clean(outer.Error()))
-	assert.Equal(t, "Hello %v", outer.(*structured).ErrorClean())
+	assert.Equal(t, "Hello %v", outer.ErrorClean())
+	require.IsType(t, (*wrappingError)(nil), outer, "Including an error arg should have resulted in a *wrappingError")
 	assert.Equal(t,
 		"github.com/getlantern/errors.TestNewWithCause (errors_test.go:999)",
-		replaceNumbers.ReplaceAllString(outer.(*structured).data["error_location"].(string), "999"))
-	assert.Equal(t, cause, outer.(*structured).cause)
+		replaceNumbers.ReplaceAllString(outer.(*wrappingError).data["error_location"].(string), "999"))
+	assert.Equal(t, cause, outer.(*wrappingError).wrapped)
 
 	// Make sure that stacktrace prints out okay
 	buf := &bytes.Buffer{}
@@ -123,7 +128,7 @@ func TestHiddenWithCause(t *testing.T) {
 	e2 := New("I wrap: %v", e1)
 	e3 := fmt.Errorf("Hiding %v", e2)
 	// clear hidden buffer
-	hiddenErrors = make([]*structured, 100)
+	hiddenErrors = make([]*baseError, 100)
 	e4 := Wrap(e3)
 	e5 := New("I'm really outer: %v", e4)
 

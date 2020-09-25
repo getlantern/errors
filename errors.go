@@ -123,15 +123,15 @@ type Error interface {
 	RootCause() error
 }
 
-type structured struct {
+type baseError struct {
 	id        uint64
 	hiddenID  string
 	data      context.Map
 	context   context.Map
-	wrapped   error
-	cause     Error
 	callStack stack.CallStack
 }
+
+// TODO: update doc as necessary
 
 // New creates an Error with supplied description and format arguments to the
 // description. If any of the arguments is an error, we use that as the cause.
@@ -142,16 +142,19 @@ func New(desc string, args ...interface{}) Error {
 // NewOffset is like New but offsets the stack by the given offset. This is
 // useful for utilities like golog that may create errors on behalf of others.
 func NewOffset(offset int, desc string, args ...interface{}) Error {
-	var cause error
+	e := buildError(desc, fmt.Sprintf(desc, args...))
+	e.attachStack(2 + offset)
 	for _, arg := range args {
-		err, isError := arg.(error)
+		wrapped, isError := arg.(error)
 		if isError {
-			cause = err
-			break
+			op, _, _, extraData := parseError(wrapped)
+			e.Op(op)
+			for k, v := range extraData {
+				e.data[k] = v
+			}
+			return &wrappingError{e, wrapped}
 		}
 	}
-	e := buildError(desc, fmt.Sprintf(desc, args...), nil, Wrap(cause))
-	e.attachStack(2 + offset)
 	return e
 }
 
@@ -160,33 +163,54 @@ func NewOffset(offset int, desc string, args ...interface{}) Error {
 // errors.Wrap(s.l.Close()) regardless there's an error or not. If the error is
 // already wrapped, it is returned as is.
 func Wrap(err error) Error {
-	return wrapSkipFrames(err, 1)
+	// TODO: consider whether Wrap could simply be an alias for New
+
+	if err == nil {
+		return nil
+	}
+	if e, ok := err.(*baseError); ok {
+		return e
+	}
+
+	op, goType, desc, extraData := parseError(err)
+	if desc == "" {
+		desc = err.Error()
+	}
+	e := buildError(desc, desc)
+	e.attachStack(2) // TODO: check skip=2
+	e.Op(op)
+	e.data["error_type"] = goType
+	for k, v := range extraData {
+		e.data[k] = v
+	}
+	if cause := getCause(err); cause != nil {
+		return &wrappingError{e, cause}
+	}
+	return e
 }
 
 // Fill implements the method from the context.Contextual interface.
-func (e *structured) Fill(m context.Map) {
-	if e != nil {
-		if e.cause != nil {
-			// Include data from cause, which supercedes context
-			e.cause.Fill(m)
-		}
-		// Include the context, which supercedes the cause
-		for key, value := range e.context {
-			m[key] = value
-		}
-		// Now include the error's data, which supercedes everything
-		for key, value := range e.data {
-			m[key] = value
-		}
+func (e *baseError) Fill(m context.Map) {
+	if e == nil {
+		return
+	}
+
+	// Include the context, which supercedes the cause
+	for key, value := range e.context {
+		m[key] = value
+	}
+	// Now include the error's data, which supercedes everything
+	for key, value := range e.data {
+		m[key] = value
 	}
 }
 
-func (e *structured) Op(op string) Error {
+func (e *baseError) Op(op string) Error {
 	e.data["error_op"] = op
 	return e
 }
 
-func (e *structured) With(key string, value interface{}) Error {
+func (e *baseError) With(key string, value interface{}) Error {
 	parts := strings.FieldsFunc(key, func(c rune) bool {
 		return !unicode.IsLetter(c) && !unicode.IsNumber(c)
 	})
@@ -204,127 +228,55 @@ func (e *structured) With(key string, value interface{}) Error {
 	return e
 }
 
-func (e *structured) RootCause() error {
-	if e.cause == nil {
-		if e.wrapped != nil {
-			return e.wrapped
-		}
-		return e
-	}
-	return e.cause.RootCause()
+func (e *baseError) RootCause() error {
+	return e
 }
 
-func (e *structured) ErrorClean() string {
+func (e *baseError) ErrorClean() string {
 	return e.data["error"].(string)
 }
 
 // Error satisfies the error interface
-func (e *structured) Error() string {
+func (e *baseError) Error() string {
 	return e.data["error_text"].(string) + e.hiddenID
 }
 
-func (e *structured) MultiLinePrinter() func(buf *bytes.Buffer) bool {
-	first := true
-	indent := false
-	err := e
+func (e *baseError) MultiLinePrinter() func(*bytes.Buffer) bool {
+	printingStack := false
 	stackPosition := 0
-	switchedCause := false
 	return func(buf *bytes.Buffer) bool {
-		if indent {
+		if printingStack {
 			buf.WriteString("  ")
-		}
-		if first {
+		} else {
 			buf.WriteString(e.Error())
-			first = false
-			indent = true
+			printingStack = true
 			return true
 		}
-		if switchedCause {
-			fmt.Fprintf(buf, "Caused by: %v", err)
-			if err.callStack != nil && len(err.callStack) > 0 {
-				switchedCause = false
-				indent = true
-				return true
-			}
-			if err.cause == nil {
-				return false
-			}
-			err = err.cause.(*structured)
-			return true
+		if stackPosition >= len(e.callStack) {
+			// Or should we have returned false from the last call?
+			return false
 		}
-		if stackPosition < len(err.callStack) {
-			buf.WriteString("at ")
-			call := err.callStack[stackPosition]
-			fmt.Fprintf(buf, "%+n (%s:%d)", call, call, call)
-			stackPosition++
-		}
-		if stackPosition >= len(err.callStack) {
-			switch cause := err.cause.(type) {
-			case *structured:
-				err = cause
-				indent = false
-				stackPosition = 0
-				switchedCause = true
-			default:
-				return false
-			}
-		}
-		return err != nil
+		buf.WriteString("at ")
+		call := e.callStack[stackPosition]
+		fmt.Fprintf(buf, "%+n (%s:%d)", call, call, call)
+		stackPosition++
+		return true
 	}
 }
 
-func wrapSkipFrames(err error, skip int) Error {
-	if err == nil {
-		return nil
-	}
-
-	// Look for *structureds
-	if e, ok := err.(*structured); ok {
-		return e
-	}
-
-	var cause Error
-	// Look for hidden *structureds
-	hiddenIDs, err2 := hidden.Extract(err.Error())
-	if err2 == nil && len(hiddenIDs) > 0 {
-		// Take the first hidden ID as our cause
-		cause = get(hiddenIDs[0])
-	}
-
-	// Create a new *structured
-	return buildError("", "", err, cause)
-}
-
-func (e *structured) attachStack(skip int) {
+func (e *baseError) attachStack(skip int) {
 	call := stack.Caller(skip)
 	e.callStack = stack.Trace().TrimBelow(call)
 	e.data["error_location"] = fmt.Sprintf("%+n (%s:%d)", call, call, call)
 }
 
-func buildError(desc string, fullText string, wrapped error, cause Error) *structured {
-	e := &structured{
+func buildError(desc string, fullText string) *baseError {
+	e := &baseError{
 		data: make(context.Map),
 		// We capture the current context to allow it to propagate to higher layers.
 		context: ops.AsMap(nil, false),
-		wrapped: wrapped,
-		cause:   cause,
 	}
 	e.save()
-
-	errorType := "errors.Error"
-	if wrapped != nil {
-		op, goType, wrappedDesc, extra := parseError(wrapped)
-		if desc == "" {
-			desc = wrappedDesc
-		}
-		e.Op(op)
-		errorType = goType
-		if extra != nil {
-			for key, value := range extra {
-				e.data[key] = value
-			}
-		}
-	}
 
 	cleanedDesc := hidden.Clean(desc)
 	e.data["error"] = cleanedDesc
@@ -333,8 +285,108 @@ func buildError(desc string, fullText string, wrapped error, cause Error) *struc
 	} else {
 		e.data["error_text"] = cleanedDesc
 	}
-	e.data["error_type"] = errorType
+	e.data["error_type"] = "errors.Error"
 
+	return e
+}
+
+type multiLinePrinter interface {
+	MultiLinePrinter() func(*bytes.Buffer) bool
+}
+
+type unwrapper interface {
+	Unwrap() error
+}
+
+type wrappingError struct {
+	*baseError
+	wrapped error
+}
+
+// Implements error unwrapping as described in the standard library's errors package:
+// https://golang.org/pkg/errors/#pkg-overview
+func (e *wrappingError) Unwrap() error {
+	return e.wrapped
+}
+
+func (e *wrappingError) Fill(m context.Map) {
+	type filler interface{ Fill(context.Map) }
+
+	if f, ok := e.wrapped.(filler); ok {
+		f.Fill(m)
+	}
+	e.baseError.Fill(m)
+}
+
+func (e *wrappingError) RootCause() error {
+	return unwrapToRoot(e)
+}
+
+// TODO: the next two functions could possibly be simplified
+
+func (e *wrappingError) MultiLinePrinter() func(*bytes.Buffer) bool {
+	currentPrinter := e.MultiLinePrinter()
+	return func(buf *bytes.Buffer) bool {
+		if currentPrinter(buf) {
+			return true
+		}
+		fmt.Fprint(buf, "Caused by: ")
+		if mlp, ok := e.wrapped.(multiLinePrinter); ok {
+			currentPrinter = mlp.MultiLinePrinter()
+		} else {
+			currentPrinter = createMultiLinePrinter(e.wrapped)
+		}
+		return currentPrinter(buf)
+	}
+}
+
+func createMultiLinePrinter(err error) func(*bytes.Buffer) bool {
+	var (
+		currentPrinter func(*bytes.Buffer) bool
+		currentErr     = err
+	)
+	if mlp, ok := err.(multiLinePrinter); ok {
+		currentPrinter = mlp.MultiLinePrinter()
+	}
+	return func(buf *bytes.Buffer) bool {
+		if currentPrinter == nil {
+			fmt.Fprint(buf, currentErr)
+		} else if currentPrinter(buf) {
+			return true
+		}
+		uw, ok := currentErr.(unwrapper)
+		if !ok {
+			// Base case: this is the root error.
+			return false
+		}
+		currentErr = uw.Unwrap()
+		if mlp, ok := currentErr.(multiLinePrinter); ok {
+			currentPrinter = mlp.MultiLinePrinter()
+		} else {
+			currentPrinter = nil
+		}
+		return true
+	}
+}
+
+func getCause(e error) error {
+	if uw, ok := e.(unwrapper); ok {
+		return uw.Unwrap()
+	}
+	// Look for hidden *baseErrors
+	// TODO: how do these get there? do we need to make sure wrappingErrors do the same?
+	hiddenIDs, extractErr := hidden.Extract(e.Error())
+	if extractErr == nil && len(hiddenIDs) > 0 {
+		// Take the first hidden ID as our cause
+		return get(hiddenIDs[0])
+	}
+	return nil
+}
+
+func unwrapToRoot(e error) error {
+	if uw, ok := e.(unwrapper); ok {
+		return unwrapToRoot(uw.Unwrap())
+	}
 	return e
 }
 

@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	hiddenErrors = make([]*structured, 100)
+	hiddenErrors = make([]*baseError, 100)
 	nextID       = uint64(0)
 	hiddenMutex  sync.RWMutex
 )
@@ -18,7 +18,7 @@ var (
 // by a standard error using something like
 // fmt.Errorf("An error occurred: %v", thisError), we can subsequently extract
 // the error simply using the hiddenID in the string.
-func (e *structured) save() {
+func (e *baseError) save() {
 	hiddenMutex.Lock()
 	b := make([]byte, 8)
 	binary.BigEndian.PutUint64(b, nextID)
