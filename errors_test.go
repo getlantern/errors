@@ -145,3 +145,25 @@ func TestHiddenWithCause(t *testing.T) {
 	// We're not asserting the output because we're just making sure that printing
 	// doesn't panic. If we get to this point without panicking, we're happy.
 }
+
+// TODO: delete or remove redundant tests elsewhere
+// TODO: remove print statements
+func TestMultilinePrinter(t *testing.T) {
+	e := New("an error occurred")
+	require.IsType(t, (*baseError)(nil), e, "error without cause should be a *baseError")
+	p := e.MultiLinePrinter()
+	buf := new(bytes.Buffer)
+	for p(buf) {
+		fmt.Fprintln(buf)
+	}
+	fmt.Println(buf.String())
+
+	e2 := New("something happened: %v", e)
+	require.IsType(t, (*wrappingError)(nil), e2, "error wrapping another should be a *wrappingError")
+	p2 := e2.MultiLinePrinter()
+	buf = new(bytes.Buffer)
+	for p2(buf) {
+		fmt.Fprintln(buf)
+	}
+	fmt.Println(buf.String())
+}

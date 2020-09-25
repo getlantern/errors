@@ -245,20 +245,16 @@ func (e *baseError) MultiLinePrinter() func(*bytes.Buffer) bool {
 	printingStack := false
 	stackPosition := 0
 	return func(buf *bytes.Buffer) bool {
-		if printingStack {
-			buf.WriteString("  ")
-		} else {
+		if !printingStack {
 			buf.WriteString(e.Error())
 			printingStack = true
 			return true
 		}
 		if stackPosition >= len(e.callStack) {
-			// Or should we have returned false from the last call?
 			return false
 		}
-		buf.WriteString("at ")
 		call := e.callStack[stackPosition]
-		fmt.Fprintf(buf, "%+n (%s:%d)", call, call, call)
+		fmt.Fprintf(buf, "  at %+n (%s:%d)", call, call, call)
 		stackPosition++
 		return true
 	}
@@ -325,16 +321,27 @@ func (e *wrappingError) RootCause() error {
 // TODO: the next two functions could possibly be simplified
 
 func (e *wrappingError) MultiLinePrinter() func(*bytes.Buffer) bool {
-	currentPrinter := e.MultiLinePrinter()
+	var (
+		currentPrinter = e.baseError.MultiLinePrinter()
+		nextErr        = e.wrapped
+	)
 	return func(buf *bytes.Buffer) bool {
 		if currentPrinter(buf) {
 			return true
 		}
+		if nextErr == nil {
+			return false
+		}
 		fmt.Fprint(buf, "Caused by: ")
-		if mlp, ok := e.wrapped.(multiLinePrinter); ok {
+		if mlp, ok := nextErr.(multiLinePrinter); ok {
 			currentPrinter = mlp.MultiLinePrinter()
 		} else {
-			currentPrinter = createMultiLinePrinter(e.wrapped)
+			currentPrinter = createMultiLinePrinter(nextErr)
+		}
+		if uw, ok := nextErr.(unwrapper); ok {
+			nextErr = uw.Unwrap()
+		} else {
+			nextErr = nil
 		}
 		return currentPrinter(buf)
 	}
