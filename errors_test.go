@@ -104,7 +104,7 @@ func buildCause() Error {
 }
 
 func buildSubCause() error {
-	return fmt.Errorf("or%v", buildSubSubCause())
+	return fmt.Errorf("or%w", buildSubSubCause())
 }
 
 func buildSubSubCause() error {

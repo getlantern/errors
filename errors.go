@@ -242,21 +242,22 @@ func (e *baseError) Error() string {
 }
 
 func (e *baseError) MultiLinePrinter() func(*bytes.Buffer) bool {
+	return e.topLevelPrinter()
+}
+
+func (e *baseError) topLevelPrinter() func(*bytes.Buffer) bool {
 	printingStack := false
 	stackPosition := 0
 	return func(buf *bytes.Buffer) bool {
 		if !printingStack {
 			buf.WriteString(e.Error())
 			printingStack = true
-			return true
-		}
-		if stackPosition >= len(e.callStack) {
-			return false
+			return len(e.callStack) > 0
 		}
 		call := e.callStack[stackPosition]
 		fmt.Fprintf(buf, "  at %+n (%s:%d)", call, call, call)
 		stackPosition++
-		return true
+		return stackPosition < len(e.callStack)
 	}
 }
 
@@ -286,8 +287,10 @@ func buildError(desc string, fullText string) *baseError {
 	return e
 }
 
-type multiLinePrinter interface {
-	MultiLinePrinter() func(*bytes.Buffer) bool
+type topLevelPrinter interface {
+	// Returns a printer which prints only the top-level error and any associated stack trace. The
+	// output of this printer will be a prefix of the output from MultiLinePrinter().
+	topLevelPrinter() func(*bytes.Buffer) bool
 }
 
 type unwrapper interface {
@@ -322,57 +325,37 @@ func (e *wrappingError) RootCause() error {
 
 func (e *wrappingError) MultiLinePrinter() func(*bytes.Buffer) bool {
 	var (
-		currentPrinter = e.baseError.MultiLinePrinter()
+		currentPrinter = e.baseError.topLevelPrinter()
 		nextErr        = e.wrapped
+		prefix         = ""
 	)
 	return func(buf *bytes.Buffer) bool {
+		fmt.Fprint(buf, prefix)
 		if currentPrinter(buf) {
+			prefix = ""
 			return true
 		}
 		if nextErr == nil {
 			return false
 		}
-		fmt.Fprint(buf, "Caused by: ")
-		if mlp, ok := nextErr.(multiLinePrinter); ok {
-			currentPrinter = mlp.MultiLinePrinter()
-		} else {
-			currentPrinter = createMultiLinePrinter(nextErr)
-		}
+		currentPrinter = getTopLevelPrinter(nextErr)
+		prefix = "Caused by: "
 		if uw, ok := nextErr.(unwrapper); ok {
 			nextErr = uw.Unwrap()
 		} else {
 			nextErr = nil
 		}
-		return currentPrinter(buf)
+		return true
 	}
 }
 
-func createMultiLinePrinter(err error) func(*bytes.Buffer) bool {
-	var (
-		currentPrinter func(*bytes.Buffer) bool
-		currentErr     = err
-	)
-	if mlp, ok := err.(multiLinePrinter); ok {
-		currentPrinter = mlp.MultiLinePrinter()
+func getTopLevelPrinter(err error) func(*bytes.Buffer) bool {
+	if tlp, ok := err.(topLevelPrinter); ok {
+		return tlp.topLevelPrinter()
 	}
 	return func(buf *bytes.Buffer) bool {
-		if currentPrinter == nil {
-			fmt.Fprint(buf, currentErr)
-		} else if currentPrinter(buf) {
-			return true
-		}
-		uw, ok := currentErr.(unwrapper)
-		if !ok {
-			// Base case: this is the root error.
-			return false
-		}
-		currentErr = uw.Unwrap()
-		if mlp, ok := currentErr.(multiLinePrinter); ok {
-			currentPrinter = mlp.MultiLinePrinter()
-		} else {
-			currentPrinter = nil
-		}
-		return true
+		fmt.Fprint(buf, err)
+		return false
 	}
 }
 
