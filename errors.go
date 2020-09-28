@@ -324,21 +324,11 @@ func (e *wrappingError) Unwrap() error {
 func (e *wrappingError) Fill(m context.Map) {
 	type filler interface{ Fill(context.Map) }
 
-	cause := e.wrapped
-	causes := []error{}
-	for cause != nil {
-		causes = append(causes, cause)
-		if uw, ok := cause.(unwrapper); ok {
-			cause = uw.Unwrap()
-		} else {
-			cause = nil
-		}
-	}
-	for i := len(causes) - 1; i >= 0; i-- {
-		if f, ok := causes[i].(filler); ok {
+	applyToChain(e.wrapped, func(err error) {
+		if f, ok := err.(filler); ok {
 			f.Fill(m)
 		}
-	}
+	})
 	e.baseError.Fill(m)
 }
 
@@ -413,6 +403,15 @@ func unwrapToRoot(e error) error {
 		return unwrapToRoot(uw.Unwrap())
 	}
 	return e
+}
+
+// Applies f to the chain of errors unwrapped from err. The function is applied to the root cause
+// first and err last.
+func applyToChain(err error, f func(error)) {
+	if uw, ok := err.(unwrapper); ok {
+		applyToChain(uw.Unwrap(), f)
+	}
+	f(err)
 }
 
 func parseError(err error) (op string, goType string, desc string, extra map[string]string) {

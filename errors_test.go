@@ -146,6 +146,25 @@ func TestHiddenWithCause(t *testing.T) {
 	// doesn't panic. If we get to this point without panicking, we're happy.
 }
 
+func TestFill(t *testing.T) {
+	e := New("something happened").(*baseError)
+	e2 := New("uh oh: %v", e).(*wrappingError)
+	e3 := New("umm: %v", e2).(*wrappingError)
+
+	e3.data["name"] = "e3"
+	e2.data["name"] = "e2"
+	e.data["name"] = "e"
+	e2.data["k"] = "v2"
+	e.data["k"] = "v"
+	e.data["a"] = "b"
+
+	m := context.Map{}
+	e3.Fill(m)
+	require.Equal(t, "e3", m["name"])
+	require.Equal(t, "v2", m["k"])
+	require.Equal(t, "b", m["a"])
+}
+
 // Ensures that this package implements error unwrapping as described in:
 // https://golang.org/pkg/errors/#pkg-overview
 func TestUnwrapping(t *testing.T) {
