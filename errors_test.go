@@ -30,9 +30,9 @@ func TestFull(t *testing.T) {
 		}
 		assert.Equal(t, "Hello There", e.Error()[:11])
 		op = ops.Begin("op2").Set("ca", 200).Set("cb", 200).Set("cc", 200)
-		e3 := Wrap(fmt.Errorf("I'm wrapping your text: %v", e)).Op("outer op").With("dATA+1", i).With("cb", 300)
+		e3 := Wrap(fmt.Errorf("I'm wrapping your text: %w", e)).Op("outer op").With("dATA+1", i).With("cb", 300)
 		op.End()
-		require.IsType(t, (*wrappingError)(nil), e3, "wrapping an error should have resulted in a *wrappingError")
+		require.IsType(t, (*wrappingError)(nil), e3, "wrapping an error with cause should have resulted in a *wrappingError")
 		assert.Equal(t, e, e3.(*wrappingError).wrapped, "Wrapping a regular error should have extracted the contained *Error")
 		m := make(context.Map)
 		e3.Fill(m)
@@ -43,7 +43,7 @@ func TestFull(t *testing.T) {
 		assert.Equal(t, 100, m["cd"], "Cause's context should come through")
 		assert.Equal(t, "My Op", e.(*baseError).data["error_op"], "Op should be available from cause")
 
-		for _, call := range e3.(*baseError).callStack {
+		for _, call := range e3.(*wrappingError).callStack {
 			t.Logf("at %v", call)
 		}
 	}
@@ -141,7 +141,6 @@ func TestHiddenWithCause(t *testing.T) {
 			break
 		}
 	}
-	fmt.Println(buf.String())
 	// We're not asserting the output because we're just making sure that printing
 	// doesn't panic. If we get to this point without panicking, we're happy.
 }
@@ -156,7 +155,6 @@ func TestMultilinePrinter(t *testing.T) {
 	for p(buf) {
 		fmt.Fprintln(buf)
 	}
-	fmt.Println(buf.String())
 
 	e2 := New("something happened: %v", e)
 	require.IsType(t, (*wrappingError)(nil), e2, "error wrapping another should be a *wrappingError")
@@ -165,5 +163,4 @@ func TestMultilinePrinter(t *testing.T) {
 	for p2(buf) {
 		fmt.Fprintln(buf)
 	}
-	fmt.Println(buf.String())
 }

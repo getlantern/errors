@@ -349,6 +349,19 @@ func (e *wrappingError) MultiLinePrinter() func(*bytes.Buffer) bool {
 	}
 }
 
+// We have to implement these methods or the fluid syntax will result in the embedded *baseError
+// being returned, not the *wrappingError.
+
+func (e *wrappingError) Op(op string) Error {
+	e.baseError = e.baseError.Op(op).(*baseError)
+	return e
+}
+
+func (e *wrappingError) With(key string, value interface{}) Error {
+	e.baseError = e.baseError.With(key, value).(*baseError)
+	return e
+}
+
 func getTopLevelPrinter(err error) func(*bytes.Buffer) bool {
 	if tlp, ok := err.(topLevelPrinter); ok {
 		return tlp.topLevelPrinter()
