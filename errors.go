@@ -324,8 +324,20 @@ func (e *wrappingError) Unwrap() error {
 func (e *wrappingError) Fill(m context.Map) {
 	type filler interface{ Fill(context.Map) }
 
-	if f, ok := e.wrapped.(filler); ok {
-		f.Fill(m)
+	cause := e.wrapped
+	causes := []error{}
+	for cause != nil {
+		causes = append(causes, cause)
+		if uw, ok := cause.(unwrapper); ok {
+			cause = uw.Unwrap()
+		} else {
+			cause = nil
+		}
+	}
+	for i := len(causes) - 1; i >= 0; i-- {
+		if f, ok := causes[i].(filler); ok {
+			f.Fill(m)
+		}
 	}
 	e.baseError.Fill(m)
 }
