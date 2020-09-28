@@ -2,7 +2,10 @@ package errors
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io"
+	"net"
 	"regexp"
 	"testing"
 
@@ -141,4 +144,32 @@ func TestHiddenWithCause(t *testing.T) {
 	}
 	// We're not asserting the output because we're just making sure that printing
 	// doesn't panic. If we get to this point without panicking, we're happy.
+}
+
+// Ensures that this package implements error unwrapping as described in:
+// https://golang.org/pkg/errors/#pkg-overview
+func TestUnwrapping(t *testing.T) {
+	sampleUnwrapper := fmt.Errorf("%w", fmt.Errorf("something happened"))
+
+	errNoCause := New("something happened")
+	_, ok := errNoCause.(unwrapper)
+	assert.False(t, ok, "error with no cause should not implement Unwrap method")
+	wrappedNoCause := Wrap(errNoCause)
+	_, ok = wrappedNoCause.(unwrapper)
+	assert.False(t, ok, "wrapped error with no cause should not implement Unwrap method")
+
+	errFromEOF := New("something happened: %v", io.EOF)
+	assert.Implements(t, &sampleUnwrapper, errFromEOF)
+	assert.True(t, errors.Is(errFromEOF, io.EOF))
+	wrappedFromEOF := Wrap(errFromEOF)
+	assert.Implements(t, &sampleUnwrapper, wrappedFromEOF)
+	assert.True(t, errors.Is(wrappedFromEOF, io.EOF))
+
+	addrErrHolder := new(net.AddrError)
+	errFromAddrErr := New("something happend: %v", new(net.AddrError))
+	assert.Implements(t, &sampleUnwrapper, errFromAddrErr)
+	assert.True(t, errors.As(errFromAddrErr, &addrErrHolder))
+	wrappedFromAddrErr := Wrap(errFromAddrErr)
+	assert.Implements(t, &sampleUnwrapper, wrappedFromAddrErr)
+	assert.True(t, errors.As(wrappedFromAddrErr, &addrErrHolder))
 }
