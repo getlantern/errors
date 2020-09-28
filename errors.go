@@ -124,7 +124,7 @@ type Error interface {
 }
 
 type baseError struct {
-	id        uint64
+	errID     uint64
 	hiddenID  string
 	data      context.Map
 	context   context.Map
@@ -152,9 +152,12 @@ func NewOffset(offset int, desc string, args ...interface{}) Error {
 			for k, v := range extraData {
 				e.data[k] = v
 			}
-			return &wrappingError{e, wrapped}
+			we := &wrappingError{e, wrapped}
+			bufferError(we)
+			return we
 		}
 	}
+	bufferError(e)
 	return e
 }
 
@@ -177,15 +180,18 @@ func Wrap(err error) Error {
 		desc = err.Error()
 	}
 	e := buildError(desc, desc)
-	e.attachStack(2) // TODO: check skip=2
+	e.attachStack(2)
 	e.Op(op)
 	e.data["error_type"] = goType
 	for k, v := range extraData {
 		e.data[k] = v
 	}
 	if cause := getCause(err); cause != nil {
-		return &wrappingError{e, cause}
+		we := &wrappingError{e, cause}
+		bufferError(we)
+		return we
 	}
+	bufferError(e)
 	return e
 }
 
@@ -267,13 +273,24 @@ func (e *baseError) attachStack(skip int) {
 	e.data["error_location"] = fmt.Sprintf("%+n (%s:%d)", call, call, call)
 }
 
+func (e *baseError) id() uint64 {
+	return e.errID
+}
+
+func (e *baseError) setID(id uint64) {
+	e.errID = id
+}
+
+func (e *baseError) setHiddenID(id string) {
+	e.hiddenID = id
+}
+
 func buildError(desc string, fullText string) *baseError {
 	e := &baseError{
 		data: make(context.Map),
 		// We capture the current context to allow it to propagate to higher layers.
 		context: ops.AsMap(nil, false),
 	}
-	e.save()
 
 	cleanedDesc := hidden.Clean(desc)
 	e.data["error"] = cleanedDesc
@@ -321,8 +338,6 @@ func (e *wrappingError) RootCause() error {
 	return unwrapToRoot(e)
 }
 
-// TODO: the next two functions could possibly be simplified
-
 func (e *wrappingError) MultiLinePrinter() func(*bytes.Buffer) bool {
 	var (
 		currentPrinter = e.baseError.topLevelPrinter()
@@ -349,7 +364,7 @@ func (e *wrappingError) MultiLinePrinter() func(*bytes.Buffer) bool {
 	}
 }
 
-// We have to implement these methods or the fluid syntax will result in the embedded *baseError
+// We have to implement these two methods or the fluid syntax will result in the embedded *baseError
 // being returned, not the *wrappingError.
 
 func (e *wrappingError) Op(op string) Error {
@@ -377,7 +392,6 @@ func getCause(e error) error {
 		return uw.Unwrap()
 	}
 	// Look for hidden *baseErrors
-	// TODO: how do these get there? do we need to make sure wrappingErrors do the same?
 	hiddenIDs, extractErr := hidden.Extract(e.Error())
 	if extractErr == nil && len(hiddenIDs) > 0 {
 		// Take the first hidden ID as our cause

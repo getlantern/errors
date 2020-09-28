@@ -49,9 +49,7 @@ func TestFull(t *testing.T) {
 	}
 
 	e3 := Wrap(fmt.Errorf("I'm wrapping your text: %v", firstErr)).With("a", 2)
-	// TODO: is this correct? (replaces commented line below)
 	require.IsType(t, (*baseError)(nil), e3, "Wrapping an *Error that's no longer buffered should have resulted in a *baseError")
-	// assert.Nil(t, e3.(*baseError).cause, "Wrapping an *Error that's no longer buffered should have yielded no cause")
 }
 
 func TestNewWithCause(t *testing.T) {
@@ -128,7 +126,7 @@ func TestHiddenWithCause(t *testing.T) {
 	e2 := New("I wrap: %v", e1)
 	e3 := fmt.Errorf("Hiding %v", e2)
 	// clear hidden buffer
-	hiddenErrors = make([]*baseError, 100)
+	hiddenErrors = make([]hideableError, 100)
 	e4 := Wrap(e3)
 	e5 := New("I'm really outer: %v", e4)
 
@@ -143,24 +141,4 @@ func TestHiddenWithCause(t *testing.T) {
 	}
 	// We're not asserting the output because we're just making sure that printing
 	// doesn't panic. If we get to this point without panicking, we're happy.
-}
-
-// TODO: delete or remove redundant tests elsewhere
-// TODO: remove print statements
-func TestMultilinePrinter(t *testing.T) {
-	e := New("an error occurred")
-	require.IsType(t, (*baseError)(nil), e, "error without cause should be a *baseError")
-	p := e.MultiLinePrinter()
-	buf := new(bytes.Buffer)
-	for p(buf) {
-		fmt.Fprintln(buf)
-	}
-
-	e2 := New("something happened: %v", e)
-	require.IsType(t, (*wrappingError)(nil), e2, "error wrapping another should be a *wrappingError")
-	p2 := e2.MultiLinePrinter()
-	buf = new(bytes.Buffer)
-	for p2(buf) {
-		fmt.Fprintln(buf)
-	}
 }
