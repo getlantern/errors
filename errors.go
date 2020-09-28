@@ -131,8 +131,6 @@ type baseError struct {
 	callStack stack.CallStack
 }
 
-// TODO: update doc as necessary
-
 // New creates an Error with supplied description and format arguments to the
 // description. If any of the arguments is an error, we use that as the cause.
 func New(desc string, args ...interface{}) Error {
@@ -166,12 +164,10 @@ func NewOffset(offset int, desc string, args ...interface{}) Error {
 // errors.Wrap(s.l.Close()) regardless there's an error or not. If the error is
 // already wrapped, it is returned as is.
 func Wrap(err error) Error {
-	// TODO: consider whether Wrap could simply be an alias for New
-
 	if err == nil {
 		return nil
 	}
-	if e, ok := err.(*baseError); ok {
+	if e, ok := err.(Error); ok {
 		return e
 	}
 
