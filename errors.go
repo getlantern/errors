@@ -146,7 +146,9 @@ func NewOffset(offset int, desc string, args ...interface{}) Error {
 		wrapped, isError := arg.(error)
 		if isError {
 			op, _, _, extraData := parseError(wrapped)
-			e.Op(op)
+			if op != "" {
+				e.Op(op)
+			}
 			for k, v := range extraData {
 				e.data[k] = v
 			}
@@ -177,7 +179,9 @@ func Wrap(err error) Error {
 	}
 	e := buildError(desc, desc)
 	e.attachStack(2)
-	e.Op(op)
+	if op != "" {
+		e.Op(op)
+	}
 	e.data["error_type"] = goType
 	for k, v := range extraData {
 		e.data[k] = v
