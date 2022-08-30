@@ -8,8 +8,8 @@ Package errors defines error types used across Lantern project.
 
 or
 
-  n, err := Foo()
-	return n, errors.Wrap(err)
+	  n, err := Foo()
+		return n, errors.Wrap(err)
 
 New() method will create a new error with err as its cause. Wrap will wrap err,
 returning nil if err is nil.  If err is an error from Go's standard library,
@@ -18,15 +18,15 @@ return value of err.Error().
 
 One can record the operation on which the error occurred using Op():
 
-  return n, errors.New("Unable to do Foo: %v", err).Op("FooDooer")
+	return n, errors.New("Unable to do Foo: %v", err).Op("FooDooer")
 
 One can also record additional data:
 
-  return n, errors.
-		New("Unable to do Foo: %v", err).
-		Op("FooDooer").
-		With("mydata", "myvalue").
-		With("moredata", 5)
+	  return n, errors.
+			New("Unable to do Foo: %v", err).
+			Op("FooDooer").
+			With("mydata", "myvalue").
+			With("moredata", 5)
 
 When used with github.com/getlantern/ops, Error captures its current context
 and propagates that data for use in calling layers.
@@ -64,6 +64,7 @@ import (
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -81,7 +82,6 @@ import (
 	"unicode"
 
 	"github.com/getlantern/context"
-	"github.com/getlantern/hidden"
 	"github.com/getlantern/ops"
 	"github.com/go-stack/stack"
 )
@@ -124,8 +124,6 @@ type Error interface {
 }
 
 type baseError struct {
-	errID     uint64
-	hiddenID  string
 	data      context.Map
 	context   context.Map
 	callStack stack.CallStack
@@ -153,11 +151,9 @@ func NewOffset(offset int, desc string, args ...interface{}) Error {
 				e.data[k] = v
 			}
 			we := &wrappingError{e, wrapped}
-			bufferError(we)
 			return we
 		}
 	}
-	bufferError(e)
 	return e
 }
 
@@ -188,10 +184,8 @@ func Wrap(err error) Error {
 	}
 	if cause := getCause(err); cause != nil {
 		we := &wrappingError{e, cause}
-		bufferError(we)
 		return we
 	}
-	bufferError(e)
 	return e
 }
 
@@ -244,7 +238,7 @@ func (e *baseError) ErrorClean() string {
 
 // Error satisfies the error interface
 func (e *baseError) Error() string {
-	return e.data["error_text"].(string) + e.hiddenID
+	return e.data["error_text"].(string)
 }
 
 func (e *baseError) MultiLinePrinter() func(*bytes.Buffer) bool {
@@ -273,18 +267,6 @@ func (e *baseError) attachStack(skip int) {
 	e.data["error_location"] = fmt.Sprintf("%+n (%s:%d)", call, call, call)
 }
 
-func (e *baseError) id() uint64 {
-	return e.errID
-}
-
-func (e *baseError) setID(id uint64) {
-	e.errID = id
-}
-
-func (e *baseError) setHiddenID(id string) {
-	e.hiddenID = id
-}
-
 func buildError(desc string, fullText string) *baseError {
 	e := &baseError{
 		data: make(context.Map),
@@ -292,12 +274,11 @@ func buildError(desc string, fullText string) *baseError {
 		context: ops.AsMap(nil, false),
 	}
 
-	cleanedDesc := hidden.Clean(desc)
-	e.data["error"] = cleanedDesc
+	e.data["error"] = desc
 	if fullText != "" {
-		e.data["error_text"] = hidden.Clean(fullText)
+		e.data["error_text"] = fullText
 	} else {
-		e.data["error_text"] = cleanedDesc
+		e.data["error_text"] = desc
 	}
 	e.data["error_type"] = "errors.Error"
 
@@ -393,12 +374,12 @@ func getCause(e error) error {
 	if uw, ok := e.(unwrapper); ok {
 		return uw.Unwrap()
 	}
-	// Look for hidden *baseErrors
-	hiddenIDs, extractErr := hidden.Extract(e.Error())
-	if extractErr == nil && len(hiddenIDs) > 0 {
-		// Take the first hidden ID as our cause
-		return get(hiddenIDs[0])
+
+	var wrapped Error
+	if errors.As(e, &wrapped) {
+		return wrapped
 	}
+
 	return nil
 }
 
