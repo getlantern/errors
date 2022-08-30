@@ -64,7 +64,6 @@ import (
 	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -182,10 +181,12 @@ func Wrap(err error) Error {
 	for k, v := range extraData {
 		e.data[k] = v
 	}
-	if cause := getCause(err); cause != nil {
-		we := &wrappingError{e, cause}
-		return we
+
+	// Make sure we maintain existing wrapping.
+	if uw, ok := err.(unwrapper); ok {
+		return &wrappingError{e, uw.Unwrap()}
 	}
+
 	return e
 }
 
@@ -368,19 +369,6 @@ func getTopLevelPrinter(err error) func(*bytes.Buffer) bool {
 		fmt.Fprint(buf, err)
 		return false
 	}
-}
-
-func getCause(e error) error {
-	if uw, ok := e.(unwrapper); ok {
-		return uw.Unwrap()
-	}
-
-	var wrapped Error
-	if errors.As(e, &wrapped) {
-		return wrapped
-	}
-
-	return nil
 }
 
 func unwrapToRoot(e error) error {
