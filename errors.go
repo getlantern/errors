@@ -130,7 +130,7 @@ type baseError struct {
 
 // New creates an Error with supplied description and format arguments to the
 // description. If any of the arguments is an error, we use that as the cause.
-func New(desc string, args ...interface{}) Error {
+func New(desc string, args ...interface{}) error {
 	return NewOffset(1, desc, args...)
 }
 
@@ -160,7 +160,7 @@ func NewOffset(offset int, desc string, args ...interface{}) Error {
 // returns nil if the error passed in is nil, so we can simply call
 // errors.Wrap(s.l.Close()) regardless there's an error or not. If the error is
 // already wrapped, it is returned as is.
-func Wrap(err error) Error {
+func Wrap(err error) error {
 	if err == nil {
 		return nil
 	}

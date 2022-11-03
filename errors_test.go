@@ -23,7 +23,7 @@ func TestNewWithCause(t *testing.T) {
 	cause := buildCause()
 	outer := New("Hello %v", cause)
 	assert.Equal(t, "Hello World", outer.Error())
-	assert.Equal(t, "Hello %v", outer.ErrorClean())
+	assert.Equal(t, "Hello %v", outer.(Error).ErrorClean())
 	require.IsType(t, (*wrappingError)(nil), outer, "Including an error arg should have resulted in a *wrappingError")
 	assert.Equal(t,
 		"github.com/getlantern/errors.TestNewWithCause (errors_test.go:999)",
@@ -32,7 +32,7 @@ func TestNewWithCause(t *testing.T) {
 
 	// Make sure that stacktrace prints out okay
 	buf := &bytes.Buffer{}
-	print := outer.MultiLinePrinter()
+	print := outer.(Error).MultiLinePrinter()
 	for {
 		more := print(buf)
 		buf.WriteByte('\n')
@@ -66,10 +66,10 @@ Caused by: d
 			replaceNumbers.ReplaceAllString(buf.String(), "999"),
 			"asm_arch.s",
 		))
-	assert.Equal(t, buildSubSubSubCause(), outer.RootCause())
+	assert.Equal(t, buildSubSubSubCause(), outer.(Error).RootCause())
 }
 
-func buildCause() Error {
+func buildCause() error {
 	return New("W%v", buildSubCause())
 }
 
