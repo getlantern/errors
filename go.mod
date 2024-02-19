@@ -1,6 +1,6 @@
 module github.com/getlantern/errors
 
-go 1.0
+go 1.12
 
 require (
 	github.com/getlantern/context v0.0.0-20220418194847-3d5e7a086201
